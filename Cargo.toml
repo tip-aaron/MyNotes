@@ -1,0 +1,11 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+
+[workspace.dependencies]
+fltk = { version = "1.5.22", default-features = false, features = ["fltk-bundled", "no-pango", "no-images"] }
+tempfile = "3.25.0"

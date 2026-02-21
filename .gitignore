@@ -1,0 +1,16 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# IDE/editor metadata
+.idea/
+.vscode/
+
+# OS-generated files
+.DS_Store
+Thumbs.db

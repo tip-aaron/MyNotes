@@ -1,0 +1,12 @@
+[package]
+name = "ui"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+editor-state = { path = "../editor-state" }
+layout = { path = "../layout" }
+renderer = { path = "../renderer" }
+
+fltk = { workspace = true }
