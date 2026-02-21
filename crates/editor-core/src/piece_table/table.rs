@@ -106,7 +106,7 @@ impl SliceOfWithStartEnd for PieceTable {
         let e = <u64 as TryInto<usize>>::try_into(end)?;
 
         match piece.buf_kind {
-            crate::enums::BufferKind::Original => Ok(&self.original.get_bytes_clamped(s, e)),
+            crate::enums::BufferKind::Original => Ok(self.original.get_bytes_clamped(s, e)),
             crate::enums::BufferKind::Add => Ok(&self.buf[s..e]),
         }
     }
@@ -122,7 +122,7 @@ impl SliceOf for PieceTable {
         let end = <u64 as TryInto<usize>>::try_into(piece.range.end)?;
 
         match piece.buf_kind {
-            crate::enums::BufferKind::Original => Ok(&self.original.get_bytes_clamped(start, end)),
+            crate::enums::BufferKind::Original => Ok(self.original.get_bytes_clamped(start, end)),
             crate::enums::BufferKind::Add => Ok(&self.buf[start..end]),
         }
     }
@@ -153,12 +153,13 @@ impl PieceTable {
             None
         };
 
-        if let Some(prev) = prev_idx.and_then(|i| self.pieces.get_mut(i)) {
-            if prev.buf_kind == buf_kind && prev.range.end == range.start {
-                prev.range.end = range.end;
+        if let Some(prev) = prev_idx.and_then(|i| self.pieces.get_mut(i))
+            && prev.buf_kind == buf_kind
+            && prev.range.end == range.start
+        {
+            prev.range.end = range.end;
 
-                return false;
-            }
+            return false;
         }
 
         true
@@ -447,7 +448,7 @@ impl PieceTable {
 
             res.extend_from_slice(SliceOfWithStartEnd::slice_of(
                 self,
-                &piece,
+                piece,
                 start,
                 start + take,
             )?);

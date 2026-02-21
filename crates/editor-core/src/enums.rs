@@ -34,6 +34,18 @@ pub enum MathError {
     OutOfBounds(usize),
 }
 
+impl std::fmt::Display for MathError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MathError::ConversionFailed(e) => write!(f, "integer conversion failed: {e}"),
+            MathError::Overflow => write!(f, "arithmetic overflow"),
+            MathError::OutOfBounds(len) => write!(f, "index out of bounds (len={len})"),
+        }
+    }
+}
+
+impl std::error::Error for MathError {}
+
 impl From<std::num::TryFromIntError> for MathError {
     fn from(err: std::num::TryFromIntError) -> Self {
         MathError::ConversionFailed(err)
