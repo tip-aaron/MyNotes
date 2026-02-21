@@ -1,3 +1,3 @@
 pub mod enums;
-mod line_index;
-mod piece_table;
+pub mod line_index;
+pub mod piece_table;

@@ -58,8 +58,10 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          # Uncomment and modify the below line based on your UI/Renderer backend (e.g., winit dependencies)
-          # sudo apt-get install -y libx11-dev libwayland-dev libxkbcommon-dev
+          sudo apt-get install -y \
+            libx11-dev libxext-dev libxinerama-dev libxcursor-dev \
+            libxrender-dev libxfixes-dev libxft-dev libfontconfig1-dev \
+            libcairo2-dev libglib2.0-dev libpango1.0-dev
 
       - name: Build Workspace
         # Builds app, editor-core, editor-state, io, layout, renderer, ui, util

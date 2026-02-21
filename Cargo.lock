@@ -81,6 +81,10 @@ dependencies = [
 [[package]]
 name = "editor-state"
 version = "0.1.0"
+dependencies = [
+ "editor-core",
+ "io",
+]
 
 [[package]]
 name = "equivalent"

@@ -5,6 +5,7 @@ pub struct LineSummary {
 }
 
 impl LineSummary {
+    #[allow(dead_code)]
     pub fn add(&mut self, other: &LineSummary) {
         self.line_count += other.line_count;
         self.byte_len += other.byte_len;

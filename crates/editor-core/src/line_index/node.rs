@@ -1,3 +1,8 @@
+// These node operations are complete API surface reserved for incremental index
+// updates (insert/delete without a full rebuild).  They are exercised by the
+// tests below but not yet called from library code.
+#![allow(dead_code)]
+
 use std::ops::{AddAssign, Sub, SubAssign};
 
 /// Contains all LeafNodes with a total summary of its children's summaries
@@ -10,8 +15,8 @@ pub struct InternalNode {
 /// Contains the data of a line
 #[derive(Debug)]
 pub struct LeafNode {
-    summary: crate::line_index::line_summary::LineSummary,
-    line_lengths: Vec<u64>,
+    pub summary: crate::line_index::line_summary::LineSummary,
+    pub line_lengths: Vec<u64>,
 }
 
 #[derive(Debug)]
@@ -22,13 +27,13 @@ pub enum Node {
     Leaf(LeafNode),
 }
 
-const MAX_CHILDREN: usize = 16;
+pub(super) const MAX_CHILDREN: usize = 16;
 
 impl Node {
     /// Returns a copy
     /// of this node's `LineSummary`
     #[inline]
-    fn summary(&self) -> &crate::line_index::line_summary::LineSummary {
+    pub fn summary(&self) -> &crate::line_index::line_summary::LineSummary {
         match self {
             Node::Internal(internal_node) => &internal_node.summary,
             Node::Leaf(leaf_node) => &leaf_node.summary,
@@ -36,7 +41,7 @@ impl Node {
     }
 
     #[inline]
-    fn summary_mut(&mut self) -> &mut crate::line_index::line_summary::LineSummary {
+    pub fn summary_mut(&mut self) -> &mut crate::line_index::line_summary::LineSummary {
         match self {
             Node::Internal(internal_node) => &mut internal_node.summary,
             Node::Leaf(leaf_node) => &mut leaf_node.summary,
@@ -364,8 +369,8 @@ impl Node {
 impl LeafNode {
     pub fn remove_line_range(
         &mut self,
-        mut start: usize,
-        mut end: usize,
+        start: usize,
+        end: usize,
     ) -> Result<u64, crate::enums::MathError> {
         let remove_start: usize;
         let remove_end: usize;
