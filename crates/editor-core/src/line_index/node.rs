@@ -1,11 +1,13 @@
 use std::ops::{AddAssign, Sub, SubAssign};
 
+/// Contains all LeafNodes with a total summary of its children's summaries
 #[derive(Debug)]
 pub struct InternalNode {
     pub summary: crate::line_index::line_summary::LineSummary,
     pub children: Vec<Node>,
 }
 
+/// Contains the data of a line
 #[derive(Debug)]
 pub struct LeafNode {
     summary: crate::line_index::line_summary::LineSummary,
@@ -14,7 +16,9 @@ pub struct LeafNode {
 
 #[derive(Debug)]
 pub enum Node {
+    /// Contains all LeafNodes with a total summary of its children's summaries
     Internal(InternalNode),
+    /// Contains the data of a line
     Leaf(LeafNode),
 }
 
@@ -128,6 +132,12 @@ impl LeafNode {
         if new_lines.is_empty() {
             self.line_lengths[target_idx].add_assign(bytes_len);
 
+            self.summary.byte_len = self
+                .summary
+                .byte_len
+                .checked_add(bytes_len)
+                .ok_or(crate::enums::MathError::Overflow)?;
+
             return Ok(self.split_if_needed());
         }
 
@@ -154,6 +164,13 @@ impl LeafNode {
         self.line_lengths
             .splice(target_idx + 1..=target_idx, to_insert);
 
+        self.summary.line_count = self.line_lengths.len();
+        self.summary.byte_len = self
+            .summary
+            .byte_len
+            .checked_add(bytes_len)
+            .ok_or(crate::enums::MathError::Overflow)?;
+
         Ok(self.split_if_needed())
     }
 
@@ -164,17 +181,16 @@ impl LeafNode {
             return None;
         }
 
-        let byte_len = self.line_lengths.iter().sum();
         let mid = line_len / 2;
         let right_lengths = self.line_lengths.split_off(mid);
         let left_summary = crate::line_index::line_summary::LineSummary {
-            line_count: line_len.clone(),
-            byte_len,
+            line_count: self.line_lengths.len(),
+            byte_len: self.line_lengths.iter().sum(),
         };
         self.summary = left_summary;
         let right_summary = crate::line_index::line_summary::LineSummary {
             line_count: right_lengths.len(),
-            byte_len,
+            byte_len: right_lengths.iter().sum(),
         };
 
         Some(LeafNode {
@@ -227,7 +243,7 @@ impl InternalNode {
         self.summary = left_sum;
         let right_sum = crate::line_index::line_summary::LineSummary {
             line_count: right_children.iter().map(|c| c.summary().line_count).sum(),
-            byte_len: self.children.iter().map(|c| c.summary().byte_len).sum(),
+            byte_len: right_children.iter().map(|c| c.summary().byte_len).sum(),
         };
 
         Some(InternalNode {
@@ -390,7 +406,7 @@ impl InternalNode {
                 end.sub_assign(child_line_count);
                 idx.add_assign(1);
 
-                break;
+                continue;
             }
 
             let child_line_start = start;
@@ -407,7 +423,11 @@ impl InternalNode {
                 idx.add_assign(1);
             }
 
-            end.sub_assign(child_line_end - child_line_start + 1);
+            if end < child_line_count {
+                break;
+            }
+
+            end.sub_assign(child_line_count);
             start = 0;
         }
 
@@ -416,5 +436,271 @@ impl InternalNode {
         self.summary.byte_len.sub_assign(bytes_removed);
 
         Ok(bytes_removed)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    // Adjust these imports based on your actual crate structure
+    use crate::enums::MathError;
+    use crate::line_index::line_summary::LineSummary;
+
+    // --- Helper Functions ---
+
+    fn create_empty_leaf() -> LeafNode {
+        LeafNode {
+            summary: LineSummary {
+                line_count: 0,
+                byte_len: 0,
+            },
+            line_lengths: Vec::new(),
+        }
+    }
+
+    fn create_empty_internal() -> InternalNode {
+        InternalNode {
+            summary: LineSummary {
+                line_count: 0,
+                byte_len: 0,
+            },
+            children: Vec::new(),
+        }
+    }
+
+    // =====================
+    // ===== INSERTION =====
+    // =====================
+
+    #[test]
+    fn test_leaf_add_child_no_newlines() {
+        let mut leaf = create_empty_leaf();
+
+        // Add "Hello" (5 bytes)
+        let split = leaf.add_child(0, b"Hello").unwrap();
+
+        assert!(split.is_none());
+        assert_eq!(leaf.summary.line_count, 0);
+        assert_eq!(leaf.summary.byte_len, 5);
+        assert_eq!(leaf.line_lengths, vec![5]);
+    }
+
+    #[test]
+    fn test_leaf_add_child_with_newlines() {
+        let mut leaf = create_empty_leaf();
+
+        // Add "Hello\nWorld\nRust" (16 bytes)
+        let split = leaf.add_child(0, b"Hello\nWorld\nRust").unwrap();
+
+        assert!(split.is_none());
+        // "Hello\n" = 6, "World\n" = 6, "Rust" = 4
+        assert_eq!(leaf.summary.byte_len, 16);
+        assert_eq!(leaf.summary.line_count, 3);
+        assert_eq!(leaf.line_lengths, vec![6, 6, 4]);
+    }
+
+    #[test]
+    fn test_leaf_split_if_needed() {
+        let mut leaf = create_empty_leaf();
+        // Force a split by adding more lines than MAX_CHILDREN (16)
+        // Adding 18 lines of "A\n" (2 bytes each)
+        let bytes = b"A\nA\nA\nA\nA\nA\nA\nA\nA\nA\nA\nA\nA\nA\nA\nA\nA\nA\n";
+        let split_result = leaf.add_child(0, bytes).unwrap();
+
+        assert!(split_result.is_some());
+
+        let right_node = split_result.unwrap();
+
+        // Original node keeps the left half (9 lines)
+        assert_eq!(leaf.line_lengths.len(), 9);
+        assert_eq!(leaf.summary.line_count, 9);
+        assert_eq!(leaf.summary.byte_len, 18);
+        // New right node gets the right half (10 lines, since 18 '\n' creates 19 elements including the empty remainder)
+        assert_eq!(right_node.line_lengths.len(), 10);
+        assert_eq!(right_node.summary.line_count, 10);
+        assert_eq!(right_node.summary.byte_len, 18);
+    }
+
+    // ======================
+    // ======= SETTER =======
+    // ======================
+
+    #[test]
+    fn test_leaf_set_line_length() {
+        let mut leaf = create_empty_leaf();
+        leaf.add_child(0, b"Line1\nLine2\nLine3").unwrap();
+
+        // line_lengths should be [6, 6, 5] (total 17)
+        assert_eq!(leaf.summary.line_count, 3);
+        assert_eq!(leaf.summary.byte_len, 17);
+
+        // Change "Line2\n" (6 bytes) to 10 bytes (+4 difference)
+        let diff = leaf.set_line_length(1, 10).unwrap();
+
+        assert_eq!(diff, 4);
+        assert_eq!(leaf.line_lengths[1], 10);
+        assert_eq!(leaf.summary.byte_len, 21); // 17 + 4
+    }
+
+    #[test]
+    fn test_leaf_set_line_length_out_of_bounds() {
+        let mut leaf = create_empty_leaf();
+
+        leaf.add_child(0, b"Line1").unwrap(); // 1 line
+
+        // targeting index 5, but only has 1 line
+        let result = leaf.set_line_length(5, 10);
+
+        assert!(matches!(result, Err(MathError::OutOfBounds(_)) | Err(_)));
+    }
+
+    #[test]
+    fn test_internal_set_line_length() {
+        let mut leaf1 = create_empty_leaf();
+
+        leaf1.add_child(0, b"A\nB\n").unwrap(); // 2 lines: [2, 2]
+
+        assert_eq!(leaf1.summary.line_count, 3);
+        assert_eq!(leaf1.summary.byte_len, 4);
+
+        let mut leaf2 = create_empty_leaf();
+
+        leaf2.add_child(0, b"C\nD\nE\n").unwrap(); // 3 lines: [2, 2, 2]
+
+        assert_eq!(leaf2.summary.line_count, 4);
+        assert_eq!(leaf2.summary.byte_len, 6);
+
+        let mut internal = create_empty_internal();
+
+        internal.children.push(Node::Leaf(leaf1));
+        internal.children.push(Node::Leaf(leaf2));
+
+        // Cascade the summaries manually since we used Vec::push instead of InternalNode::add_child
+        internal.summary.line_count = internal
+            .children
+            .iter()
+            .map(|c| c.summary().line_count)
+            .sum();
+        internal.summary.byte_len = internal.children.iter().map(|c| c.summary().byte_len).sum();
+
+        // 3 lines + 4 lines = 7 lines total!
+        assert_eq!(internal.summary.line_count, 7);
+        assert_eq!(internal.summary.byte_len, 10);
+
+        // Target index 3 skips leaf1 (which has indices 0, 1, 2)
+        // and lands on leaf2 at index 0 (which is "C\n" with a length of 2).
+        // We change length 2 to 5 (diff = +3).
+        let diff = internal.set_line_length(3, 5).unwrap();
+
+        assert_eq!(diff, 3);
+        assert_eq!(internal.summary.byte_len, 13); // 10 + 3
+
+        if let Node::Leaf(l) = &internal.children[1] {
+            // Assert on index 0 of leaf2!
+            assert_eq!(l.line_lengths[0], 5);
+        } else {
+            panic!("Expected LeafNode");
+        }
+    }
+
+    // ========================
+    // ======= DELETION =======
+    // ========================
+
+    #[test]
+    fn test_leaf_remove_line_range() {
+        let mut leaf = create_empty_leaf();
+
+        leaf.add_child(0, b"A\nB\nC\nD\nE").unwrap();
+        // Lengths: [2, 2, 2, 2, 1] -> Total 9 bytes
+        assert_eq!(leaf.summary.byte_len, 9);
+        assert_eq!(leaf.summary.line_count, 5);
+
+        // Remove lines 1 to 3 inclusive ("B\n", "C\n", "D\n") -> indices 1..=3
+        let removed_bytes = leaf.remove_line_range(1, 3).unwrap();
+
+        assert_eq!(removed_bytes, 6); // 2 + 2 + 2 bytes removed
+        assert_eq!(leaf.line_lengths, vec![2, 1]); // "A\n" and "E" left
+        assert_eq!(leaf.summary.line_count, 2);
+        assert_eq!(leaf.summary.byte_len, 3);
+    }
+
+    #[test]
+    fn test_internal_remove_line_range() {
+        let mut leaf1 = create_empty_leaf();
+
+        leaf1.add_child(0, b"1\n2\n").unwrap(); // [2, 2]
+        assert_eq!(leaf1.summary.byte_len, 4);
+        assert_eq!(leaf1.summary.line_count, 3);
+
+        let mut leaf2 = create_empty_leaf();
+
+        leaf2.add_child(0, b"3\n4\n").unwrap(); // [2, 2]
+        assert_eq!(leaf2.summary.byte_len, 4);
+        assert_eq!(leaf2.summary.line_count, 3);
+
+        let mut internal = create_empty_internal();
+        internal.children.push(Node::Leaf(leaf1));
+        internal.children.push(Node::Leaf(leaf2));
+
+        // Cascade the summaries manually since we used Vec::push instead of InternalNode::add_child
+        internal.summary.line_count = internal
+            .children
+            .iter()
+            .map(|c| c.summary().line_count)
+            .sum();
+        internal.summary.byte_len = internal.children.iter().map(|c| c.summary().byte_len).sum();
+        // Remove lines 1 through 3.
+        // Line 1 is from leaf 1, line 3 is from leaf 2
+        let removed_bytes = internal.remove_line_range(1, 3).unwrap();
+
+        println!("{:#?}", internal);
+
+        assert_eq!(internal.children[0].summary().line_count, 1);
+        assert_eq!(removed_bytes, 4); // 2 bytes from leaf1, 2 bytes from leaf2
+        assert_eq!(internal.summary.line_count, 3);
+        assert_eq!(internal.summary.byte_len, 4);
+        assert_eq!(internal.children.len(), 2); // Neither node became entirely empty
+
+        if let Node::Leaf(l) = &internal.children[0] {
+            assert_eq!(l.line_lengths.len(), 1);
+        }
+    }
+
+    #[test]
+    fn test_internal_remove_culls_empty_nodes() {
+        let mut leaf1 = create_empty_leaf();
+
+        leaf1.add_child(0, b"1\n").unwrap();
+        assert_eq!(leaf1.summary.byte_len, 2);
+        assert_eq!(leaf1.summary.line_count, 2);
+
+        let mut leaf2 = create_empty_leaf();
+
+        leaf2.add_child(0, b"2\n").unwrap();
+        assert_eq!(leaf1.summary.byte_len, 2);
+        assert_eq!(leaf1.summary.line_count, 2);
+
+        let mut internal = create_empty_internal();
+
+        internal.children.push(Node::Leaf(leaf1));
+        internal.children.push(Node::Leaf(leaf2));
+        internal.summary.line_count = internal
+            .children
+            .iter()
+            .map(|c| c.summary().line_count)
+            .sum();
+        internal.summary.byte_len = internal.children.iter().map(|c| c.summary().byte_len).sum();
+
+        // Remove only line 0 & 1 (empty line). This empties leaf1 entirely.
+        internal.remove_line_range(0, 1).unwrap();
+        assert_eq!(internal.children.len(), 1);
+        assert_eq!(internal.summary.line_count, 2);
+
+        if let Node::Leaf(l) = &internal.children[0] {
+            assert_eq!(l.line_lengths.len(), 2);
+            assert_eq!(l.summary.byte_len, 2);
+            assert_eq!(l.line_lengths, vec![2, 0]); // The remaining "2\n"
+        }
     }
 }

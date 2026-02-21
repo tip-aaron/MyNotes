@@ -282,7 +282,7 @@ impl PieceTable {
 
                 self.pieces
                     .get_mut(idx)
-                    .expect("idx is alredy being checked")
+                    .expect("idx is already being checked")
                     .range
                     .start
                     .add_assign(remove_len);
@@ -302,7 +302,7 @@ impl PieceTable {
                 });
                 self.pieces
                     .get_mut(idx)
-                    .expect("idx is alredy being checked")
+                    .expect("idx is already being checked")
                     .range
                     .end
                     .sub_assign(remove_len);
