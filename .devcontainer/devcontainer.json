@@ -1,0 +1,113 @@
+{
+  "name": "MyNotes (Rust)",
+  "image": "mcr.microsoft.com/devcontainers/rust:1-bullseye",
+
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": true,
+      "configureZshAsDefaultShell": true
+    }
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        // Rust language support (mirrors RustRover's built-in Rust engine)
+        "rust-lang.rust-analyzer",
+
+        // Vim emulation matching IdeaVim behaviour in RustRover
+        "vscodevim.vim",
+
+        // TOML support (Cargo.toml editing)
+        "tamasfe.even-better-toml",
+
+        // crates.io version hints in Cargo.toml
+        "serayuzgur.crates",
+
+        // LLDB-based debugger (matches RustRover's debugger)
+        "vadimcn.vscode-lldb",
+
+        // Inline error/warning display (similar to RustRover's gutter annotations)
+        "usernamehw.errorlens",
+
+        // Test explorer integration
+        "swellaby.vscode-rust-test-adapter",
+        "hbenl.vscode-test-explorer"
+      ],
+
+      "settings": {
+        // ── Editor basics (match RustRover defaults) ─────────────────────────
+        "editor.fontSize": 14,
+        "editor.fontFamily": "JetBrains Mono, Consolas, 'Courier New', monospace",
+        "editor.tabSize": 4,
+        "editor.insertSpaces": true,
+        "editor.rulers": [100],
+        "editor.formatOnSave": true,
+        "editor.suggestSelection": "first",
+        "editor.inlayHints.enabled": "on",
+
+        // ── rust-analyzer (RustRover engine parity) ──────────────────────────
+        "rust-analyzer.check.command": "clippy",
+        "rust-analyzer.check.extraArgs": ["--", "-W", "clippy::pedantic"],
+        "rust-analyzer.cargo.buildScripts.enable": true,
+        "rust-analyzer.procMacro.enable": true,
+        "rust-analyzer.inlayHints.typeHints.enable": true,
+        "rust-analyzer.inlayHints.parameterHints.enable": true,
+        "rust-analyzer.inlayHints.chainingHints.enable": true,
+        "rust-analyzer.completion.autoimport.enable": true,
+        "rust-analyzer.imports.granularity.group": "module",
+
+        // ── VSCodeVim – IdeaVim parity ────────────────────────────────────────
+        // Load the .ideavimrc placed next to this file at container start
+        "vim.vimrc.enable": true,
+        "vim.vimrc.path": "${containerWorkspaceFolder}/.devcontainer/.ideavimrc",
+
+        "vim.enable": true,
+        "vim.useSystemClipboard": true,
+        "vim.useCtrlKeys": true,
+        "vim.hlsearch": true,
+        "vim.incsearch": true,
+        "vim.ignorecase": true,
+        "vim.smartcase": true,
+        "vim.scrolloff": 5,
+
+        // Keep <C-c> as escape (IdeaVim default)
+        "vim.insertModeKeyBindings": [
+          { "before": ["j", "k"], "after": ["<Esc>"] }
+        ],
+
+        // Normal-mode bindings matching common IdeaVim / RustRover shortcuts
+        "vim.normalModeKeyBindingsNonRecursive": [
+          // Navigation
+          { "before": ["<leader>", "e"], "commands": ["workbench.view.explorer"] },
+          { "before": ["<leader>", "f"], "commands": ["workbench.action.quickOpen"] },
+          { "before": ["<leader>", "g"], "commands": ["workbench.view.scm"] },
+          // Go-to actions (mirrors RustRover Ctrl+B / Ctrl+Click)
+          { "before": ["g", "d"], "commands": ["editor.action.revealDefinition"] },
+          { "before": ["g", "r"], "commands": ["editor.action.goToReferences"] },
+          { "before": ["g", "i"], "commands": ["editor.action.goToImplementation"] },
+          { "before": ["g", "t"], "commands": ["editor.action.goToTypeDefinition"] },
+          // Refactoring (mirrors RustRover Shift+F6 / Ctrl+Alt+M)
+          { "before": ["<leader>", "r", "n"], "commands": ["editor.action.rename"] },
+          // Diagnostics (mirrors RustRover F2)
+          { "before": ["]", "d"], "commands": ["editor.action.marker.next"] },
+          { "before": ["[", "d"], "commands": ["editor.action.marker.prev"] },
+          // Code actions (mirrors RustRover Alt+Enter)
+          { "before": ["<leader>", "a"], "commands": ["editor.action.quickFix"] },
+          // Toggle terminal (mirrors RustRover Alt+F12)
+          { "before": ["<leader>", "t"], "commands": ["workbench.action.terminal.toggleTerminal"] }
+        ],
+
+        "vim.leader": "<Space>",
+
+        // ── Terminal ──────────────────────────────────────────────────────────
+        "terminal.integrated.defaultProfile.linux": "zsh"
+      }
+    }
+  },
+
+  // Install the Rust toolchain components RustRover ships with by default
+  "postCreateCommand": "rustup component add rust-src clippy rustfmt && cargo fetch",
+
+  "remoteUser": "vscode"
+}

@@ -1,0 +1,69 @@
+" ══════════════════════════════════════════════════════════
+"  .ideavimrc – IdeaVim-compatible settings for VSCodeVim
+"  Mirrors the default IdeaVim configuration used in RustRover
+" ══════════════════════════════════════════════════════════
+
+" ── Emulated IdeaVim plugins ─────────────────────────────
+set surround          " vim-surround  (cs, ds, ys motions)
+set commentary        " gc{motion} to comment / uncomment
+set sneak             " s{char}{char} two-char jump
+set highlightedyank   " briefly highlight yanked region
+
+" ── Core options (match RustRover / IdeaVim defaults) ────
+set number            " absolute line numbers
+set relativenumber    " relative numbers for fast navigation
+set scrolloff=5       " keep 5 lines visible above/below cursor
+set sidescrolloff=8
+set incsearch         " incremental search highlight
+set hlsearch          " keep search highlight after search
+set ignorecase        " case-insensitive search …
+set smartcase         "   … unless query contains uppercase
+set showmode          " show INSERT / NORMAL / VISUAL in status
+set showcmd           " show partial commands in status bar
+set clipboard=unnamedplus  " share clipboard with the OS (like IdeaVim's clipboard=unnamed,ideaput)
+set visualbell        " no terminal bell
+
+" ── Indentation ──────────────────────────────────────────
+set expandtab
+set tabstop=4
+set shiftwidth=4
+set softtabstop=4
+
+" ── Leader key ───────────────────────────────────────────
+let mapleader = " "
+
+" ── Normal mode mappings ─────────────────────────────────
+" Clear search highlight (IdeaVim: <Esc><Esc>)
+nnoremap <Esc><Esc> :nohl<CR>
+
+" Quick save
+nnoremap <leader>w :w<CR>
+
+" Window navigation (matches RustRover split-pane shortcuts)
+nnoremap <C-h> <C-w>h
+nnoremap <C-l> <C-w>l
+nnoremap <C-j> <C-w>j
+nnoremap <C-k> <C-w>k
+
+" Move lines up/down (Alt+Shift+Up/Down in RustRover)
+nnoremap <A-j> :m .+1<CR>==
+nnoremap <A-k> :m .-2<CR>==
+
+" Indent/outdent and re-select (like IdeaVim Tab / Shift-Tab in visual)
+vnoremap < <gv
+vnoremap > >gv
+
+" Move lines in visual mode
+vnoremap <A-j> :m '>+1<CR>gv=gv
+vnoremap <A-k> :m '<-2<CR>gv=gv
+
+" Insert blank line without entering insert mode (RustRover Shift+Enter)
+nnoremap <CR> o<Esc>
+nnoremap <S-CR> O<Esc>
+
+" ── Insert mode ──────────────────────────────────────────
+" jk escape is configured in devcontainer.json VSCodeVim settings; no duplicate needed here
+
+" ── Text objects extra ────────────────────────────────────
+" select entire buffer (use <leader>a is reserved for code-actions in devcontainer settings)
+nnoremap <leader>A ggVG
