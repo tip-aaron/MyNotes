@@ -114,6 +114,13 @@ impl BTreeLineIndex {
             .ok_or(crate::enums::MathError::OutOfBounds(0))
     }
 
+    pub fn new_empty() -> Self {
+        Self {
+            root: crate::line_index::node::Node::Leaf(crate::line_index::node::LeafNode::default()),
+            cache: std::cell::Cell::new(None),
+        }
+    }
+
     pub fn new(bytes: &[u8]) -> Result<Self, crate::enums::MathError> {
         if bytes.is_empty() {
             return Ok(Self {
