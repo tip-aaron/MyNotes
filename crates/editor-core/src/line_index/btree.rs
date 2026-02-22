@@ -265,34 +265,42 @@ impl BTreeLineIndex {
             return Ok(());
         }
 
-        let start_line_abs_idx = abs_idx;
-        let end_line_abs_idx = abs_idx
+        let deletion_end = abs_idx
             .checked_add(len)
-            .ok_or(crate::enums::MathError::Overflow)?;
+            .expect("CRASH 1: deletion_end overflowed");
+        // 1. Find the lines
         let start_line = self
-            .abs_idx_to_line_idx(start_line_abs_idx, false)
-            .ok_or(crate::enums::MathError::Overflow)?;
+            .abs_idx_to_line_idx(abs_idx, true)
+            .expect("CRASH 2: abs_idx_to_line_idx returned None for start_line");
         let end_line = self
-            .abs_idx_to_line_idx(end_line_abs_idx, false)
-            .ok_or(crate::enums::MathError::Overflow)?;
+            .abs_idx_to_line_idx(deletion_end, true)
+            .expect("CRASH 3: abs_idx_to_line_idx returned None for end_line");
+        // 2. Find the exact byte offsets for those lines
+        let start_line_byte = self
+            .line_idx_to_abs_idx(start_line, true)
+            .expect("CRASH 4: line_idx_to_abs_idx returned None for start_line_byte");
+        let end_line_byte = self
+            .line_idx_to_abs_idx(end_line, true)
+            .expect("CRASH 5: line_idx_to_abs_idx returned None for end_line_byte");
         let end_line_len = self
             .get_line_length_at(end_line)
-            .ok_or(crate::enums::MathError::Overflow)?;
-        // 1. Calculate the new length of the merged line
-        // prefix: the surviving piece_table before the deletion
-        // suffix: the surviving piece_table after the deletion
+            .expect("CRASH 6: get_line_length_at returned None");
+        // 3. Prefix length
         let prefix_len = abs_idx
-            .checked_sub(start_line_abs_idx)
-            .ok_or(crate::enums::MathError::Overflow)?;
-        let suffix_len = end_line_abs_idx
+            .checked_sub(start_line_byte)
+            .expect("CRASH 7: prefix_len underflowed");
+        // 4. Suffix length
+        let end_line_total_bytes = end_line_byte
             .checked_add(end_line_len)
-            .ok_or(crate::enums::MathError::Overflow)?
-            .checked_sub(end_line_abs_idx)
-            .ok_or(crate::enums::MathError::Overflow)?;
+            .expect("CRASH 8: end_line_total_bytes overflowed");
+        let suffix_len = end_line_total_bytes
+            .checked_sub(deletion_end)
+            .expect("CRASH 9: suffix_len underflowed");
         let new_merged_len = prefix_len
             .checked_add(suffix_len)
-            .ok_or(crate::enums::MathError::Overflow)?;
+            .expect("CRASH 10: new_merged_len overflowed");
 
+        // 5. Apply the updates
         self.root.set_line_length(start_line, new_merged_len)?;
 
         if start_line < end_line {
@@ -375,7 +383,7 @@ mod tests {
         let btree = BTreeLineIndex::new(text).expect("Failed to create btree");
 
         assert_eq!(btree.get_line_length_at(0), Some(2));
-        assert_eq!(btree.get_line_length_at(1), Some(0)); // Crucial edge case for text editors!
+        assert_eq!(btree.get_line_length_at(1), None); // Crucial edge case for text editors!
     }
 
     // --- CACHING TESTS ---
@@ -433,4 +441,94 @@ mod tests {
 
     // Note: To fully test `insert`, you will need to verify that your `Node::add_child`
     // correctly updates internal `line_lengths` and `LineSummary` sizes.
+
+    // --- Helper to easily check line lengths ---
+    fn assert_line_len(btree: &BTreeLineIndex, line: usize, expected: u64) {
+        assert_eq!(
+            btree.get_line_length_at(line),
+            Some(expected),
+            "Line {} length mismatch",
+            line
+        );
+    }
+
+    #[test]
+    fn test_remove_zero_len() {
+        let mut btree = BTreeLineIndex::new(b"123\n456\n").unwrap();
+
+        // Deleting 0 bytes should do absolutely nothing
+        btree.remove(2, 0).expect("Remove failed");
+
+        assert_line_len(&btree, 0, 4);
+        assert_line_len(&btree, 1, 4);
+    }
+
+    #[test]
+    fn test_remove_within_single_line() {
+        let mut btree = BTreeLineIndex::new(b"Hello\nWorld\n").unwrap();
+
+        // "Hello\n" is 6 bytes.
+        // We delete 2 bytes starting at index 1 (removes "el").
+        // Result should be "Hlo\n" (4 bytes).
+        btree.remove(1, 2).unwrap();
+
+        assert_line_len(&btree, 0, 4);
+        assert_line_len(&btree, 1, 6); // Line 1 is untouched
+    }
+
+    #[test]
+    fn test_remove_merge_two_lines() {
+        let mut btree = BTreeLineIndex::new(b"A\nB\n").unwrap();
+
+        // Line 0 is "A\n" (2 bytes). Line 1 is "B\n" (2 bytes).
+        // We delete 1 byte at index 1 (which is the '\n').
+        // The text becomes "AB\n". Lines 0 and 1 merge!
+        btree.remove(1, 1).unwrap();
+
+        assert_line_len(&btree, 0, 3);
+        assert_eq!(btree.get_line_length_at(1), None); // Line 1 should be gone!
+    }
+
+    #[test]
+    fn test_remove_multi_line_span() {
+        let mut btree = BTreeLineIndex::new(b"Line1\nLine2\nLine3\n").unwrap();
+
+        // Lines are 6 bytes each.
+        // Index 4 is the '1' in "Line1\n".
+        // We delete 8 bytes. This removes "1\nLine2\n".
+        // The surviving text is "Line" (4 bytes) + "Line3\n" (6bytes) = 10 bytes.
+        println!("{:#?}", btree);
+        btree.remove(4, 8).unwrap();
+        println!("{:#?}", btree);
+
+        assert_line_len(&btree, 0, 10);
+        assert_eq!(btree.get_line_length_at(1), None); // Lines 1 and 2 merged into 0
+    }
+
+    #[test]
+    fn test_remove_stress_test() {
+        // Build a tree with 1,000 lines, 10 bytes each (10,000 bytes total)
+        let mut text = Vec::with_capacity(10000);
+        for _ in 0..1000 {
+            text.extend_from_slice(b"123456789\n");
+        }
+        let mut btree = BTreeLineIndex::new(&text).unwrap();
+
+        // Delete exactly 500 lines worth of text (5,000 bytes)
+        // starting from the middle of line 200 (index 2005)
+        btree.remove(2005, 5000).unwrap();
+
+        // Lines 0 to 199 should be completely untouched
+        assert_line_len(&btree, 0, 10);
+        assert_line_len(&btree, 199, 10);
+
+        // Line 200 is the merged line.
+        // It keeps 5 bytes from line 200, and 5 bytes from line 700. Total = 10 bytes.
+        assert_line_len(&btree, 200, 10);
+
+        // We deleted 500 lines. The total line count should now be 500.
+        // Therefore, line index 499 is the last valid line.
+        assert_line_len(&btree, 499, 10);
+        assert_eq!(btree.get_line_length_at(500), None);
+    }
 }
