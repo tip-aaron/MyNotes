@@ -1,5 +1,6 @@
 pub type TextBufferResult<T> = Result<T, TextBufferError>;
 
+#[derive(Debug)]
 pub enum TextBufferError {
     CreationError,
     IoError(std::io::Error),
