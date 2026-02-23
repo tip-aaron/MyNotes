@@ -1,4 +1,4 @@
-use std::ops::{Add, AddAssign, Sub, SubAssign};
+use std::ops::{Add, AddAssign, SubAssign};
 
 /// Contains all `LeafNodes` with a total summary of its children's summaries
 #[derive(Debug, Default)]
