@@ -3,13 +3,13 @@
 pub struct Position {
     pub row: usize,
     /// The byte offset or character index within the line.
-    pub column: usize,
+    pub col: usize,
 }
 
 impl Position {
     #[must_use]
     pub fn new(row: usize, column: usize) -> Self {
-        Self { row, column }
+        Self { row, col: column }
     }
 }
 
@@ -44,7 +44,7 @@ impl Cursor {
         Self {
             anchor,
             head,
-            preferred_column: Some(head.column),
+            preferred_column: Some(head.col),
         }
     }
 
@@ -84,7 +84,7 @@ impl Cursor {
     /// Moves the head to a new position, updating the selection.
     pub fn set_head(&mut self, pos: Position) {
         self.head = pos;
-        self.preferred_column = Some(pos.column);
+        self.preferred_column = Some(pos.col);
     }
 
     /// Moves both anchor and head to the same position (clears selection).
