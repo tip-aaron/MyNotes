@@ -257,6 +257,10 @@ impl BTreeLineIndex {
             current_abs_idx,
         }
     }
+
+    pub fn iter(&self) -> crate::line_index::line_iter::LineRangeIter<'_> {
+        self.lines(0, self.root.summary().line_count)
+    }
 }
 
 /*
@@ -327,7 +331,7 @@ impl BTreeLineIndex {
 }
 
 #[cfg(test)]
-mod tests {
+mod btree_line_index_tests {
     use super::*;
 
     // --- CREATION TESTS ---
@@ -534,5 +538,84 @@ mod tests {
         // Therefore, line index 499 is the last valid line.
         assert_line_len(&btree, 499, 10);
         assert_eq!(btree.get_line_length_at(500), None);
+    }
+
+    #[test]
+    fn test_lines_iterator_yields_correct_range() {
+        // Setup: 5 lines with distinctly different lengths so we can track them easily.
+        // Line 0: "a\n"       -> 2 bytes
+        // Line 1: "bb\n"      -> 3 bytes
+        // Line 2: "ccc\n"     -> 4 bytes
+        // Line 3: "dddd\n"    -> 5 bytes
+        // Line 4: "eeeee"     -> 5 bytes
+        let text = b"a\nbb\nccc\ndddd\neeeee";
+        let index = BTreeLineIndex::new(text).expect("Failed to build BTreeLineIndex");
+        // Execute: Request a slice of the middle lines: from index 1 to 4 (exclusive).
+        // This should target Line 1, Line 2, and Line 3.
+        let iter = index.lines(1, 4);
+        let lengths = iter.collect::<Vec<(usize, std::ops::Range<u64>)>>();
+
+        // since end_line (4) is exclusive, lines should only be 3
+        assert_eq!(lengths.len(), 3);
+        // 2nd line (idx 1) starts at absolute index, in the whole string, 2.
+        // It ends at the 5th index (exclusive).
+        // Other lines are the same.
+        assert_eq!(lengths, vec![(1, 2..5), (2, 5..9), (3, 9..14)]);
+    }
+
+    #[test]
+    fn test_lines_iterator_full_document() {
+        let text = b"line 1\nline 2\nline 3";
+        let index = BTreeLineIndex::new(text).unwrap();
+
+        // Execute: Iterate over all lines
+        let iter = index.lines(0, 3);
+        let lengths = iter.collect::<Vec<(usize, std::ops::Range<u64>)>>();
+
+        // Assert:
+        // Line 0: 7 bytes -> 0..7
+        // Line 1: 7 bytes -> 7..14
+        // Line 2: 6 bytes -> 14..20
+        assert_eq!(lengths.len(), 3);
+        assert_eq!(
+            lengths,
+            vec![(0, 0..7), (1, 7..14), (2, 14..20)],
+            "Iterating the full tree must yield correct ranges for all lines"
+        );
+    }
+
+    #[test]
+    fn test_lines_iterator_empty_tree() {
+        let index = BTreeLineIndex::new(b"").unwrap();
+
+        // An empty file technically has 1 line of length 0.
+        let iter = index.lines(0, 1);
+        let lengths = iter.collect::<Vec<(usize, std::ops::Range<u64>)>>();
+
+        assert_eq!(lengths.len(), 1);
+        assert_eq!(
+            lengths,
+            vec![(0, 0..0)],
+            "Empty tree should yield a single 0-length line at range 0..0"
+        );
+    }
+
+    #[test]
+    fn test_lines_iterator_iter_all() {
+        let text = b"line 1\nline 2\nline 3";
+        let index = BTreeLineIndex::new(text).unwrap();
+
+        // Execute: Iterate over all lines using the convenience `iter` method
+        let iter = index.iter();
+        let lengths = iter.collect::<Vec<(usize, std::ops::Range<u64>)>>();
+
+        // Assert: It should automatically detect exactly 3 lines
+        // and yield their absolute bounds.
+        assert_eq!(lengths.len(), 3);
+        assert_eq!(
+            lengths,
+            vec![(0, 0..7), (1, 7..14), (2, 14..20)],
+            "iter() must automatically yield correct ranges for all lines in the document"
+        );
     }
 }
