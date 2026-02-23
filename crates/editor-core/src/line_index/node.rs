@@ -101,7 +101,7 @@ impl LeafNode {
             .line_lengths
             .iter()
             .position(|&line_length| {
-                if abs_byte_offset < line_length {
+                if abs_byte_offset <= line_length {
                     return true;
                 }
 
