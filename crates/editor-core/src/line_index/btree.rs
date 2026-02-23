@@ -114,6 +114,14 @@ impl BTreeLineIndex {
             .ok_or(crate::enums::MathError::OutOfBounds(0))
     }
 
+    #[allow(unused)]
+    pub fn new_empty() -> Self {
+        Self {
+            root: crate::line_index::node::Node::Leaf(crate::line_index::node::LeafNode::default()),
+            cache: std::cell::Cell::new(None),
+        }
+    }
+
     pub fn new(bytes: &[u8]) -> Result<Self, crate::enums::MathError> {
         if bytes.is_empty() {
             return Ok(Self {
@@ -339,7 +347,6 @@ mod tests {
         let text = b"Hello, World!";
         let btree = BTreeLineIndex::new(text).expect("Failed to create btree");
 
-        println!("{:#?}", btree);
         // Line 0 should be the exact length of the text
         assert_eq!(btree.get_line_length_at(0), Some(13));
         assert_eq!(btree.line_idx_to_abs_idx(0, false), Some(0));
@@ -447,8 +454,7 @@ mod tests {
         assert_eq!(
             btree.get_line_length_at(line),
             Some(expected),
-            "Line {} length mismatch",
-            line
+            "Line {line} length mismatch"
         );
     }
 
@@ -497,9 +503,7 @@ mod tests {
         // Index 4 is the '1' in "Line1\n".
         // We delete 8 bytes. This removes "1\nLine2\n".
         // The surviving text is "Line" (4 bytes) + "Line3\n" (6bytes) = 10 bytes.
-        println!("{:#?}", btree);
         btree.remove(4, 8).unwrap();
-        println!("{:#?}", btree);
 
         assert_line_len(&btree, 0, 10);
         assert_eq!(btree.get_line_length_at(1), None); // Lines 1 and 2 merged into 0

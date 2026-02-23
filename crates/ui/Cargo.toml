@@ -8,5 +8,4 @@ license.workspace = true
 editor-state = { path = "../editor-state" }
 layout = { path = "../layout" }
 renderer = { path = "../renderer" }
-
 fltk = { workspace = true }

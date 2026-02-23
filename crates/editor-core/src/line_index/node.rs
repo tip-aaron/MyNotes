@@ -1,6 +1,6 @@
-use std::ops::{AddAssign, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Sub, SubAssign};
 
-/// Contains all LeafNodes with a total summary of its children's summaries
+/// Contains all `LeafNodes` with a total summary of its children's summaries
 #[derive(Debug, Default)]
 pub struct InternalNode {
     pub summary: crate::line_index::line_summary::LineSummary,
@@ -16,7 +16,7 @@ pub struct LeafNode {
 
 #[derive(Debug)]
 pub enum Node {
-    /// Contains all LeafNodes with a total summary of its children's summaries
+    /// Contains all `LeafNodes` with a total summary of its children's summaries
     Internal(InternalNode),
     /// Contains the data of a line
     Leaf(LeafNode),
@@ -81,7 +81,7 @@ impl Node {
 }
 
 impl LeafNode {
-    /// Appends a default 0 if line_lengths is currently empty
+    /// Appends a default 0 if `line_lengths` is currently empty
     #[inline]
     fn default_if_empty(&mut self) {
         if self.line_lengths.is_empty() {
@@ -277,7 +277,7 @@ impl InternalNode {
  */
 
 impl Node {
-    /// Recursively finds the target line, updates its length, and fixes byte_len summaries.
+    /// Recursively finds the target line, updates its length, and fixes `byte_len` summaries.
     /// Returns the difference in bytes to bubble up the tree.
     #[inline]
     pub fn set_line_length(
@@ -330,7 +330,7 @@ impl InternalNode {
     ) -> Result<i64, crate::enums::MathError> {
         let mut diff = 0;
 
-        for child in self.children.iter_mut() {
+        for child in &mut self.children {
             let child_lines = child.summary().line_count;
 
             if target_line_idx < child_lines {
@@ -370,29 +370,25 @@ impl Node {
         end: usize,
     ) -> Result<u64, crate::enums::MathError> {
         match self {
-            Node::Leaf(leaf_node) => leaf_node.remove_line_range(start, end),
+            Node::Leaf(leaf_node) => Ok(leaf_node.remove_line_range(start, end)),
             Node::Internal(internal_node) => internal_node.remove_line_range(start, end),
         }
     }
 }
 
 impl LeafNode {
-    pub fn remove_line_range(
-        &mut self,
-        start: usize,
-        end: usize,
-    ) -> Result<u64, crate::enums::MathError> {
+    pub fn remove_line_range(&mut self, start: usize, end: usize) -> u64 {
         let remove_start: usize;
         let remove_end: usize;
 
         {
             let line_len = self.line_lengths.len();
             remove_start = start.min(line_len);
-            remove_end = (end + 1).min(line_len);
+            remove_end = (end.add(1)).min(line_len);
         }
 
         if remove_start >= remove_end {
-            return Ok(0);
+            return 0;
         }
 
         let removed_bytes_count = self.line_lengths.drain(remove_start..remove_end).sum();
@@ -400,7 +396,7 @@ impl LeafNode {
 
         self.summary.byte_len.sub_assign(removed_bytes_count);
 
-        Ok(removed_bytes_count)
+        removed_bytes_count
     }
 }
 
@@ -753,7 +749,7 @@ mod tests {
         // targeting index 5, but only has 1 line
         let result = leaf.set_line_length(5, 10);
 
-        assert!(matches!(result, Err(MathError::OutOfBounds(_)) | Err(_)));
+        assert!(matches!(result, Err(MathError::OutOfBounds(_) | _)));
     }
 
     #[test]
@@ -811,7 +807,7 @@ mod tests {
         assert_eq!(leaf.summary.line_count, 5);
 
         // Remove lines 1 to 3 inclusive ("B\n", "C\n", "D\n") -> indices 1..=3
-        let removed_bytes = leaf.remove_line_range(1, 3).unwrap();
+        let removed_bytes = leaf.remove_line_range(1, 3);
 
         assert_eq!(removed_bytes, 6); // 2 + 2 + 2 bytes removed
         assert_eq!(leaf.line_lengths, vec![2, 1]); // "A\n" and "E" left
@@ -840,8 +836,6 @@ mod tests {
         // Remove lines 1 through 3.
         // Line 1 is from leaf 1, line 3 is from leaf 2
         let removed_bytes = internal.remove_line_range(1, 3).unwrap();
-
-        println!("{:#?}", internal);
 
         assert_eq!(internal.children[0].summary().line_count, 1);
         assert_eq!(removed_bytes, 4); // 2 bytes from leaf1, 2 bytes from leaf2
@@ -998,12 +992,15 @@ mod tests {
     }
 
     fn make_leaf(lengths: Vec<u64>) -> LeafNode {
+        let byte_len = lengths.iter().sum::<u64>();
+        let summary = LineSummary {
+            line_count: lengths.len(),
+            byte_len,
+        };
+
         LeafNode {
-            line_lengths: lengths.clone(),
-            summary: LineSummary {
-                line_count: lengths.len(),
-                byte_len: lengths.iter().sum::<u64>(),
-            },
+            line_lengths: lengths,
+            summary,
         }
     }
 

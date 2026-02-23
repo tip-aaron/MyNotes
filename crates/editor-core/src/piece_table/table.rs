@@ -70,7 +70,7 @@ impl PieceTable {
     /// Total document length in bytes
     #[inline]
     pub fn len(&self) -> u64 {
-        self.pieces.iter().map(|p| p.len()).sum()
+        self.pieces.iter().map(super::piece::Piece::len).sum()
     }
 
     #[inline]
@@ -106,7 +106,7 @@ impl SliceOfWithStartEnd for PieceTable {
         let e = <u64 as TryInto<usize>>::try_into(end)?;
 
         match piece.buf_kind {
-            crate::enums::BufferKind::Original => Ok(&self.original.get_bytes_clamped(s, e)),
+            crate::enums::BufferKind::Original => Ok(self.original.get_bytes_clamped(s, e)),
             crate::enums::BufferKind::Add => Ok(&self.buf[s..e]),
         }
     }
@@ -122,7 +122,7 @@ impl SliceOf for PieceTable {
         let end = <u64 as TryInto<usize>>::try_into(piece.range.end)?;
 
         match piece.buf_kind {
-            crate::enums::BufferKind::Original => Ok(&self.original.get_bytes_clamped(start, end)),
+            crate::enums::BufferKind::Original => Ok(self.original.get_bytes_clamped(start, end)),
             crate::enums::BufferKind::Add => Ok(&self.buf[start..end]),
         }
     }
@@ -263,6 +263,7 @@ impl PieceTable {
 
         while len > 0 && idx < pieces_len {
             let piece = self.pieces[idx].clone();
+            #[allow(clippy::similar_names)]
             let piece_len = self.pieces[idx].len();
             let delete_start = offset;
             let delete_end = (offset + len).min(piece_len);
@@ -448,7 +449,7 @@ impl PieceTable {
 
             res.extend_from_slice(SliceOfWithStartEnd::slice_of(
                 self,
-                &piece,
+                piece,
                 start,
                 start + take,
             )?);
@@ -473,7 +474,7 @@ mod tests {
     fn pt_from_str(s: &str) -> crate::piece_table::table::PieceTable {
         let mut temp_file = tempfile::NamedTempFile::new().expect("could not create temp file");
 
-        write!(temp_file, "{}", s).expect("could not write");
+        write!(temp_file, "{s}").expect("could not write");
 
         let path = temp_file.into_temp_path();
 

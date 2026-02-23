@@ -9,7 +9,7 @@ pub struct LineRangeIter<'node> {
     pub current_abs_idx: u64,
 }
 
-impl<'node> Iterator for LineRangeIter<'node> {
+impl Iterator for LineRangeIter<'_> {
     type Item = (usize, std::ops::Range<u64>);
 
     fn next(&mut self) -> Option<Self::Item> {

@@ -7,6 +7,4 @@ license.workspace = true
 [dependencies]
 memchr = "2.8.0"
 io = { path = "../io" }
-
-[dev-dependencies]
 tempfile = { workspace = true }
