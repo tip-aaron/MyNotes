@@ -19,13 +19,6 @@ pub trait SliceOfWithStartEnd {
     ) -> Result<&[u8], crate::enums::MathError>;
 }
 
-pub trait SliceOf {
-    fn slice_of(
-        &self,
-        piece: &crate::piece_table::piece::Piece,
-    ) -> Result<&[u8], crate::enums::MathError>;
-}
-
 /*
 
 ====================================
@@ -69,6 +62,7 @@ impl PieceTable {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.pieces.is_empty() || self.len() == 0
     }
@@ -105,24 +99,6 @@ impl SliceOfWithStartEnd for PieceTable {
                 Ok(self.original.get_bytes_clamped(s, e.saturating_sub(s)))
             }
             crate::enums::BufferKind::Add => Ok(&self.buf[s..e]),
-        }
-    }
-}
-
-impl SliceOf for PieceTable {
-    #[inline]
-    fn slice_of(
-        &self,
-        piece: &crate::piece_table::piece::Piece,
-    ) -> Result<&[u8], crate::enums::MathError> {
-        let start = <u64 as TryInto<usize>>::try_into(piece.range.start)?;
-        let end = <u64 as TryInto<usize>>::try_into(piece.range.end)?;
-
-        match piece.buf_kind {
-            crate::enums::BufferKind::Original => Ok(self
-                .original
-                .get_bytes_clamped(start, end.saturating_sub(start))),
-            crate::enums::BufferKind::Add => Ok(&self.buf[start..end]),
         }
     }
 }
@@ -255,6 +231,7 @@ impl PieceTable {
     }
 
     /// Starts at the end of the Piece Table
+    #[allow(dead_code)]
     pub fn insert_last(&mut self, pos: u64, bytes: &[u8]) -> Result<(), crate::enums::MathError> {
         self.insert(
             self.len()
