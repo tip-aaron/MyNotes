@@ -60,6 +60,8 @@ impl History {
                             text: last_text,
                         }) = last_tx.actions.last_mut()
             && last_pos.row == pos.row // Must be on the same row to batch
+            && !text.contains('\n')    // FIX: Do not batch if typing a newline
+            && !last_text.contains('\n') // FIX: Do not batch if previous text has a newline
             && last_pos
             .col
             .checked_add(last_text.len())
@@ -107,6 +109,8 @@ impl History {
             // Strict constraint: Only batch if everything happens on the same row.
             // This prevents multi-line deletes from messing up the bounding box math.
             && last_start.row == start.row
+            && !deleted_text.contains('\n')    // FIX: Do not batch if typing a newline
+            && !last_text.contains('\n') // FIX: Do not batch if previous text has a newline
             && last_end.row == end.row
         {
             // SCENARIO 1: Backspace Batching
