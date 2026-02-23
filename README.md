@@ -8,6 +8,10 @@ An extremely lightweight and fast text editor that uses as little memory as poss
     - [x] Basic Piece Table
     - [x] B-Tree for line indexing
     - [x] Opening a file from a path
+    - [x] TextBuffer to hold the two together
+    - [x] Cursor with anchor and head
+    - [x] History API to undo and redo
+    - [x] Document to hold all state together as one public-facing API    
     - [ ] Simple UI for opening file chooser
     - [ ] Cursor with selection in mind
     - [ ] Viewport with scrolling
