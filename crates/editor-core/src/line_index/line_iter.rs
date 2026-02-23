@@ -49,4 +49,12 @@ impl Iterator for LineRangeIter<'_> {
 
         Some((self.current_line_idx - 1, start..self.current_abs_idx))
     }
+
+    /// Tells `collect()` exactly how much memory to allocate up front.
+    /// This prevents intermediate Vec reallocations during traversal.
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = self.end_line_idx.saturating_sub(self.current_line_idx);
+        (remaining, Some(remaining))
+    }
 }
