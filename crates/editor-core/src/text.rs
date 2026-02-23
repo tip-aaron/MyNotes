@@ -39,7 +39,7 @@ impl TextBuffer {
         let tmp_file = tempfile::NamedTempFile::new()?;
         let mut file = tmp_file.as_file();
 
-        file.write_all(b"Start writing...")?;
+        file.write_all(b"")?;
         file.sync_all()?;
 
         let mmap_file = io::mmap::MmapFile::open(tmp_file.path())?;
@@ -50,7 +50,7 @@ impl TextBuffer {
             piece_table,
             line_index,
             is_dirty: false,
-            filepath: Some(tmp_file.path().to_path_buf()),
+            filepath: None,
             _temp_backing: Some(tmp_file),
         })
     }
@@ -61,12 +61,32 @@ impl TextBuffer {
     ///
     /// Returns an error if the file does not exist, lacks read permissions,
     /// or if the memory mapping operation fails.
-    pub fn open<P: AsRef<std::path::Path>>(path: P) -> std::io::Result<Self> {
+    pub fn open<P: AsRef<std::path::Path>>(path: P) -> crate::errors::TextBufferResult<Self> {
+        let path_buf = path.as_ref().to_path_buf();
         // 1. Load MmapFile.
-        // 2. Initialize PieceTable with the MmapFile.
+        // The OS sets up the page tables but doesn't read the whole file into RAM yet.
+        let mmap_file = io::mmap::MmapFile::open(&path_buf)?;
         // 3. Scan the MmapFile slice to build the BTreeLineIndex.
+        // We do this BEFORE transferring ownership of the mmap_file to the PieceTable.
+        // The slice borrow is immediately dropped when `BTreeLineIndex::new` returns.
+        // (Assuming `new` returns a Result, if not, remove the `?`).
+        let line_index = crate::line_index::btree::BTreeLineIndex::new(mmap_file.as_slice())?;
+        // 2. Initialize PieceTable with the MmapFile.
+        // This moves `mmap_file` into the PieceTable, where it will live as read-only backing storage.
+        let piece_table = crate::piece_table::table::PieceTable::new(mmap_file)?;
+
         // 4. (Optional but recommended) Spawn the `notify` file watcher here.
-        todo!("Implement mmap loading and initial B-Tree construction")
+        // Note: Architecturally, it is better to have `editor-state` handle `notify`
+        // so it can route the filesystem events into your main UI event loop.
+        // We leave this un-implemented in `editor-core`.
+
+        Ok(Self {
+            piece_table,
+            line_index,
+            is_dirty: false,
+            filepath: Some(path_buf),
+            _temp_backing: None, // This is a real file on disk, no temp backing needed
+        })
     }
 
     /// Safely flushes the evaluated state of the buffer to disk.
@@ -76,12 +96,77 @@ impl TextBuffer {
     /// Returns an error if there is no file path associated with the buffer,
     /// if the temporary save file cannot be written, or if the atomic rename fails.
     pub fn save(&mut self) -> std::io::Result<()> {
-        // 1. Write the evaluated PieceTable to a temporary file.
-        // 2. Atomically rename the temp file to `self.filepath`.
-        // 3. Drop the old MmapFile and map the newly saved file.
-        // 4. Reset `self.is_dirty = false`.
-        // 5. Clear the `buf` (append buffer) since everything is now in the original file.
-        todo!("Implement atomic save and remap")
+        // Ensure we actually have a file path to save to.
+        let filepath = self.filepath.as_ref().ok_or_else(|| {
+            // Assuming your TextBufferError can be constructed from an io::Error.
+            // Adjust this if your error enum has a specific `MissingFilePath` variant.
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "No file path associated with this buffer. Use save_as().",
+            )
+        })?;
+
+        // 1. Create a temporary file in the *same directory* as the target file.
+        // This is strictly required for atomic renames; if the temp file is in /tmp
+        // but the target is on a different hard drive, the OS rename will fail.
+        let parent_dir = filepath
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."));
+        let mut temp_save_file = tempfile::Builder::new()
+            .prefix(".save_tmp_")
+            .tempfile_in(parent_dir)?;
+
+        // 2. Write the evaluated PieceTable to the temporary file.
+        // (Assuming you have a method on PieceTable that iterates through the pieces
+        // and returns their byte slices, or a dedicated `write_to` method).
+        for chunk in self.piece_table.iter_bytes() {
+            temp_save_file.write_all(chunk)?;
+        }
+
+        // Ensure all bytes are physically flushed to the disk drive controller.
+        temp_save_file.as_file().sync_all()?;
+        // 3. Atomically rename the temp file to `self.filepath`.
+        // `persist` moves the file to the target path. We map its specific PersistError
+        // back into a standard io::Error so it easily converts into TextBufferResult.
+        temp_save_file.persist(filepath).map_err(|e| e.error)?;
+
+        // 4. Drop the old MmapFile and map the newly saved file.
+        let new_mmap = io::mmap::MmapFile::open(filepath)?;
+
+        // 5. Reset the PieceTable state.
+        // This method on your PieceTable should:
+        // - Clear the `buf` (append buffer).
+        // - Replace the old MmapFile with `new_mmap`.
+        // - Collapse the `pieces` vector down into a single Piece spanning the whole file.
+        self.piece_table.reset_to_mmap(new_mmap);
+
+        // 6. Reset dirty flag.
+        self.is_dirty = false;
+
+        Ok(())
+    }
+
+    /// Saves the buffer to a new file path.
+    ///
+    /// This updates the internal file path, releases any temporary backing file,
+    /// and performs a safe atomic save to the new destination.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the new destination cannot be written to or if the
+    /// atomic rename within `save()` fails.
+    pub fn save_as<P: AsRef<std::path::Path>>(&mut self, path: P) -> std::io::Result<()> {
+        let new_path = path.as_ref().to_path_buf();
+
+        // 1. Update the internal path
+        self.filepath = Some(new_path);
+
+        // 2. Drop the temp backing file. If this buffer was created via `new()`,
+        // it no longer needs the hidden /tmp file because it now has a real home.
+        self._temp_backing = None;
+
+        // 3. Delegate to your bulletproof atomic save logic!
+        self.save()
     }
 }
 
@@ -135,10 +220,13 @@ impl TextBuffer {
 
 impl TextBuffer {
     /// Fetches a single line of text as a String.
-    pub fn get_line(&self, line: usize) -> Option<String> {
+    pub fn get_line(&self, line_idx: usize) -> Option<String> {
         // 1. Query `self.line_index` to get the absolute byte offset and length of `line`.
         // 2. Pass that byte range to `self.piece_table` to resolve the actual string.
-        todo!("Coordinate B-Tree lookup with PieceTable resolution")
+        let line_length = self.line_index.get_line_length_at(line_idx)?;
+        let start_abs_idx = self.line_index.line_idx_to_abs_idx(line_idx, false)?;
+
+        self.piece_table.get_string(start_abs_idx, line_length).ok()
     }
 
     /// Returns the LineRangeIter to traverse the B-Tree for a specific range of lines.
@@ -148,9 +236,7 @@ impl TextBuffer {
         start_line: usize,
         end_line: usize,
     ) -> crate::line_index::line_iter::LineRangeIter<'_> {
-        // Return your specialized iterator, seeded with the correct starting Node
-        // and offsets from the BTreeLineIndex.
-        todo!("Initialize and return LineRangeIter")
+        self.line_index.lines(start_line, end_line)
     }
 }
 
@@ -270,12 +356,10 @@ impl TextBuffer {
             .line_index
             .get_line_length_at(cursor.head.row)
             .expect("Row out of bounds in BTree");
-
         // Safely convert u64 to usize
         let current_row_len: usize = current_row_len_u64
             .try_into()
             .expect("Line length exceeds memory capacity for this architecture");
-
         let end_position = if cursor.head.column < current_row_len {
             // Move forward one character
             crate::cursor::Position {
@@ -284,7 +368,7 @@ impl TextBuffer {
             }
         } else {
             // Wrapping case: If we are at the end of the line, Delete removes the newline character
-            // bringing the next line up.
+            // bringing the next line-up.
             let total_rows = self.line_count();
             if cursor.head.row + 1 >= total_rows {
                 return; // At the very end of the document, nothing to delete forward
@@ -324,5 +408,118 @@ impl TextBuffer {
         // 3. Apply the structural changes to `self.line_index`.
         // 4. Push to `self.piece_table.undo_stack`.
         todo!("Implement redo")
+    }
+}
+
+#[cfg(test)]
+mod text_buffer_creation_save_tests {
+    use crate::text::TextBuffer;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_textbuffer_new() {
+        let buffer = TextBuffer::new().expect("Failed to create new TextBuffer");
+
+        assert!(buffer.filepath.is_none());
+        assert!(buffer._temp_backing.is_some());
+        assert!(!buffer.is_dirty);
+
+        let bytes: Vec<u8> = buffer.piece_table.iter_bytes().flatten().copied().collect();
+        assert_eq!(bytes, b"");
+    }
+
+    #[test]
+    fn test_textbuffer_open() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(b"Hello from disk").unwrap();
+        temp_file.as_file().sync_all().unwrap();
+        let path = temp_file.path().to_path_buf();
+
+        let buffer = TextBuffer::open(&path).expect("Failed to open TextBuffer");
+
+        assert_eq!(buffer.filepath, Some(path));
+        assert!(buffer._temp_backing.is_none());
+        assert!(!buffer.is_dirty);
+
+        let bytes: Vec<u8> = buffer.piece_table.iter_bytes().flatten().copied().collect();
+        assert_eq!(bytes, b"Hello from disk");
+    }
+
+    #[test]
+    fn test_textbuffer_save_without_filepath_fails() {
+        let mut buffer = TextBuffer::new().unwrap();
+        let result = buffer.save();
+
+        assert!(matches!(result, Err(e) if e.kind() == std::io::ErrorKind::InvalidInput));
+    }
+
+    #[test]
+    fn test_textbuffer_save_as() {
+        let mut buffer = TextBuffer::new().unwrap();
+        let target_dir = tempfile::tempdir().unwrap();
+        let target_path = target_dir.path().join("my_new_file.txt");
+
+        // Execute save_as
+        buffer
+            .save_as(&target_path)
+            .expect("save_as should succeed");
+
+        // Assert only the state transitions unique to save_as
+        // (Disk writes and clean flags are tested in save_success)
+        assert_eq!(buffer.filepath, Some(target_path));
+        assert!(buffer._temp_backing.is_none());
+    }
+
+    #[test]
+    fn test_textbuffer_save_success() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(b"Original text").unwrap();
+        let path = temp_file.path().to_path_buf();
+
+        let mut buffer = TextBuffer::open(&path).unwrap();
+        buffer.piece_table.insert_last(0, b" plus edits").unwrap();
+        buffer.is_dirty = true;
+
+        // Execute Save
+        buffer.save().expect("Save should succeed");
+
+        // Assert core save transitions and data integrity
+        assert!(!buffer.is_dirty);
+
+        let disk_contents = std::fs::read(&path).unwrap();
+        assert_eq!(disk_contents, b"Original text plus edits");
+
+        let bytes: Vec<u8> = buffer.piece_table.iter_bytes().flatten().copied().collect();
+        assert_eq!(bytes, b"Original text plus edits");
+    }
+}
+
+#[cfg(test)]
+mod text_buffer_getter_tests {
+    use super::*;
+
+    #[test]
+    fn test_get_line() {
+        let mut text_buffer = TextBuffer::new().expect("Failed to create new TextBuffer");
+
+        text_buffer
+            .line_index
+            .insert(0, b"hello, there\nhaha\nwoah")
+            .unwrap();
+        text_buffer
+            .piece_table
+            .insert(0, b"hello, there\nhaha\nwoah")
+            .unwrap();
+
+        let line1 = text_buffer.get_line(0);
+        let line2 = text_buffer.get_line(1);
+        let line3 = text_buffer.get_line(2);
+        let line4 = text_buffer.get_line(3);
+
+        assert_eq!(line1, Some(String::from("hello, there\n")));
+        assert_eq!(line2, Some(String::from("haha\n")));
+        assert_eq!(line3, Some(String::from("woah")));
+        assert_eq!(line4, None);
     }
 }
