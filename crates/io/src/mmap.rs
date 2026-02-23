@@ -45,12 +45,14 @@ impl MmapFile {
     #[inline]
     #[must_use]
     pub fn get_bytes_clamped(&self, start: usize, length: usize) -> &[u8] {
-        if start >= self.len() {
+        let len = self.len();
+
+        if start >= len {
             return &[];
         }
 
         // saturating_add prevents overflow, min caps it at file length
-        let end = std::cmp::min(start.saturating_add(length), self.len());
+        let end = std::cmp::min(start.saturating_add(length), len);
 
         // Safe to index directly here because we manually clamped `end`
         &self.mmap[start..end]
