@@ -7,6 +7,7 @@ pub enum TextBufferError {
     ConversionError(std::num::TryFromIntError),
     IndexOutOfBounds(usize),
     Overflow,
+    PositionToAbsIdxError,
 }
 
 impl From<std::io::Error> for TextBufferError {
