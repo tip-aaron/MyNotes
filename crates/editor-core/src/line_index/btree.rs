@@ -286,7 +286,7 @@ impl BTreeLineIndex {
             .expect("CRASH 2: abs_idx_to_line_idx returned None for start_line");
         let end_line = self
             .abs_idx_to_line_idx(deletion_end, true)
-            .expect("CRASH 3: abs_idx_to_line_idx returned None for end_line");
+            .unwrap_or_else(|| self.root.summary().line_count.saturating_sub(1));
         // 2. Find the exact byte offsets for those lines
         let start_line_byte = self
             .line_idx_to_abs_idx(start_line, true)
@@ -305,8 +305,12 @@ impl BTreeLineIndex {
         let end_line_total_bytes = end_line_byte
             .checked_add(end_line_len)
             .expect("CRASH 8: end_line_total_bytes overflowed");
+
+        // FIX 2: Prevent underflow if deletion_end somehow exceeded actual document bounds
+        let safe_deletion_end = std::cmp::min(deletion_end, end_line_total_bytes);
+
         let suffix_len = end_line_total_bytes
-            .checked_sub(deletion_end)
+            .checked_sub(safe_deletion_end)
             .expect("CRASH 9: suffix_len underflowed");
         let new_merged_len = prefix_len
             .checked_add(suffix_len)
@@ -616,6 +620,64 @@ mod btree_line_index_tests {
             lengths,
             vec![(0, 0..7), (1, 7..14), (2, 14..20)],
             "iter() must automatically yield correct ranges for all lines in the document"
+        );
+    }
+}
+
+#[cfg(test)]
+mod btree_remove_eof_tests {
+    use super::*;
+
+    #[test]
+    fn test_btree_remove_exactly_at_eof() {
+        // "line 1\n" is 7 bytes (0..7)
+        // "line 2" is 6 bytes (7..13)
+        // Total bytes = 13.
+        let text = b"line 1\nline 2";
+        let mut index = BTreeLineIndex::new(text).unwrap();
+
+        // Execute: Delete " 2" at the very end of the file.
+        // abs_idx = 11, len = 2. deletion_end = 13 (Exact EOF)
+        let result = index.remove(11, 2);
+
+        // Assert: It should not panic on CRASH 3
+        assert!(
+            result.is_ok(),
+            "remove() should not panic when deleting exactly up to EOF"
+        );
+
+        // Assert: The last line's length should drop from 6 ("line 2") to 4 ("line")
+        assert_eq!(
+            index.get_line_length_at(1).unwrap(),
+            4,
+            "The suffix calculation should correctly shrink the last line"
+        );
+    }
+
+    #[test]
+    fn test_btree_remove_entire_last_line() {
+        let text = b"line 1\nline 2";
+        let mut index = BTreeLineIndex::new(text).unwrap();
+
+        // Execute: Delete "\nline 2"
+        // This spans from the middle of the document to the exact EOF
+        // "\n" starts at index 6. len = 7.
+        let result = index.remove(6, 7);
+        assert!(
+            result.is_ok(),
+            "remove() should handle merging the last line out of existence"
+        );
+
+        // Assert: The tree should now only have 1 line left ("line 1", len 6)
+        assert_eq!(
+            index.root.summary().line_count,
+            1,
+            "Should have 1 line remaining"
+        );
+        assert_eq!(
+            index.get_line_length_at(0).unwrap(),
+            6,
+            "Remaining line length should be 6"
         );
     }
 }
