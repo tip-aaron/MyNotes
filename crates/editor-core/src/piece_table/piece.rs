@@ -11,6 +11,7 @@ impl Piece {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.range.start == self.range.end
     }
