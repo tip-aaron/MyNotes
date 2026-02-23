@@ -106,7 +106,9 @@ impl SliceOfWithStartEnd for PieceTable {
         let e = <u64 as TryInto<usize>>::try_into(end)?;
 
         match piece.buf_kind {
-            crate::enums::BufferKind::Original => Ok(self.original.get_bytes_clamped(s, e)),
+            crate::enums::BufferKind::Original => {
+                Ok(self.original.get_bytes_clamped(s, e.saturating_sub(s)))
+            }
             crate::enums::BufferKind::Add => Ok(&self.buf[s..e]),
         }
     }
@@ -122,7 +124,9 @@ impl SliceOf for PieceTable {
         let end = <u64 as TryInto<usize>>::try_into(piece.range.end)?;
 
         match piece.buf_kind {
-            crate::enums::BufferKind::Original => Ok(self.original.get_bytes_clamped(start, end)),
+            crate::enums::BufferKind::Original => Ok(self
+                .original
+                .get_bytes_clamped(start, end.saturating_sub(start))),
             crate::enums::BufferKind::Add => Ok(&self.buf[start..end]),
         }
     }
@@ -471,7 +475,6 @@ impl PieceTable {
                 start,
                 start + take,
             )?);
-
             len.sub_assign(take);
 
             if len == 0 {
@@ -557,6 +560,7 @@ impl PieceTable {
 
 #[cfg(test)]
 mod piece_table_tests {
+    use crate::piece_table::table::SliceOfWithStartEnd;
     use std::io::Write;
 
     fn pt_from_str(s: &str) -> crate::piece_table::table::PieceTable {
@@ -819,6 +823,44 @@ mod piece_table_tests {
         assert!(
             bytes.is_empty(),
             "Iterating a 0-byte collapsed piece should yield no bytes"
+        );
+    }
+
+    #[test]
+    fn test_slice_of_original_buffer() {
+        let pt = pt_from_str("ABCDEF");
+        let piece = crate::piece_table::piece::Piece {
+            buf_kind: crate::enums::BufferKind::Original,
+            range: 0..6,
+        };
+
+        let slice = pt
+            .slice_of(&piece, 2, 5)
+            .expect("Failed to slice original buffer");
+
+        assert_eq!(
+            slice, b"CDE",
+            "Original buffer slicing failed: likely passed 'end' as 'length"
+        );
+    }
+
+    #[test]
+    fn test_slice_of_add_buffer() {
+        let mut pt = pt_from_str("ABCDEF");
+        let piece = crate::piece_table::piece::Piece {
+            buf_kind: crate::enums::BufferKind::Add,
+            range: 0..6,
+        };
+
+        pt.insert(6, b"XYZ123").unwrap();
+
+        let slice = pt
+            .slice_of(&piece, 2, 5)
+            .expect("Failed to slice original buffer");
+
+        assert_eq!(
+            slice, b"Z12",
+            "Original buffer slicing failed: likely passed 'end' as 'length"
         );
     }
 }
