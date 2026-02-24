@@ -216,9 +216,43 @@ impl Document {
 }
 
 impl Document {
+    pub fn get_selected_text(&self) -> String {
+        let (start, end) = self.cursor.range();
+        let mut out = String::new();
+
+        for row in start.row..=end.row {
+            if let Some(line) = self.get_line_stripped(row) {
+                let from = if row == start.row { start.col } else { 0 };
+                let to = if row == end.row { end.col } else { line.len() };
+
+                out.push_str(&line[from..to]);
+
+                if row != end.row {
+                    out.push_str(self.text_buffer.line_ending.as_str());
+                }
+            }
+        }
+
+        out
+    }
+
     #[inline]
     pub fn get_line_count(&self) -> usize {
         self.text_buffer.line_count()
+    }
+
+    #[inline]
+    pub fn get_line_len_at(&self, line_idx: usize) -> Option<u64> {
+        self.text_buffer.get_line_len_at(line_idx)
+    }
+
+    pub fn get_visible_line_len_at(&self, line_idx: usize) -> Option<u64> {
+        Some(
+            self.get_line_stripped(line_idx)?
+                .trim_end_matches(&['\n', '\r'][..])
+                .chars()
+                .count() as u64,
+        )
     }
 
     #[inline]
