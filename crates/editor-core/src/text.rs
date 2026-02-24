@@ -1,5 +1,46 @@
 use std::io::Write;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LineEnding {
+    LF,   // \n
+    CRLF, // \r\n
+}
+
+impl LineEnding {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            LineEnding::LF => "\n",
+            LineEnding::CRLF => "\r\n",
+        }
+    }
+}
+
+pub fn detect_line_ending(bytes: &[u8]) -> LineEnding {
+    let mut i = 0;
+
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\n' => {
+                // Found LF without preceding CR
+                return LineEnding::LF;
+            }
+            b'\r' => {
+                return if i + 1 < bytes.len() && bytes[i + 1] == b'\n' {
+                    LineEnding::CRLF
+                } else {
+                    // Lone CR → treat as LF (or normalize)
+                    LineEnding::LF
+                };
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+
+    // No newline found → default
+    LineEnding::LF
+}
+
 /// # The Core Philosophies of This API
 ///
 /// - Coordinate-Based: The UI doesn't know what a byte offset is. It thinks in (line, column). The `TextBuffer`'s job is to take those coordinates, use your B-Tree to resolve them into absolute byte offsets, and feed those offsets to the Piece Table.
@@ -9,6 +50,8 @@ use std::io::Write;
 pub struct TextBuffer {
     piece_table: crate::piece_table::table::PieceTable,
     line_index: crate::line_index::btree::BTreeLineIndex,
+
+    pub line_ending: LineEnding,
 
     /// Tracks if the buffer has unsaved changes.
     is_dirty: bool,
@@ -50,6 +93,7 @@ impl TextBuffer {
         Ok(Self {
             piece_table,
             line_index,
+            line_ending: LineEnding::LF,
             is_dirty: false,
             filepath: None,
             _temp_backing: Some(tmp_file),
@@ -66,6 +110,11 @@ impl TextBuffer {
     pub fn new_with_text(text: &str) -> crate::errors::TextBufferResult<Self> {
         let tmp_file = tempfile::NamedTempFile::new()?;
         let mut file = tmp_file.as_file();
+        let line_ending = if text.contains("\r\n") {
+            LineEnding::CRLF
+        } else {
+            LineEnding::LF
+        };
 
         file.write_all(text.as_bytes())?;
         file.sync_all()?;
@@ -77,6 +126,7 @@ impl TextBuffer {
         Ok(Self {
             piece_table,
             line_index,
+            line_ending,
             is_dirty: false,
             filepath: None,
             _temp_backing: Some(tmp_file),
@@ -98,6 +148,7 @@ impl TextBuffer {
         // We do this BEFORE transferring ownership of the mmap_file to the PieceTable.
         // The slice borrow is immediately dropped when `BTreeLineIndex::new` returns.
         // (Assuming `new` returns a Result, if not, remove the `?`).
+        let line_ending = detect_line_ending(mmap_file.as_slice());
         let line_index = crate::line_index::btree::BTreeLineIndex::new(mmap_file.as_slice())?;
         // 2. Initialize PieceTable with the MmapFile.
         // This moves `mmap_file` into the PieceTable, where it will live as read-only backing storage.
@@ -111,6 +162,7 @@ impl TextBuffer {
         Ok(Self {
             piece_table,
             line_index,
+            line_ending,
             is_dirty: false,
             filepath: Some(path_buf),
             _temp_backing: None, // This is a real file on disk, no temp backing needed
@@ -125,6 +177,7 @@ impl TextBuffer {
         // 1. Load MmapFile.
         // The OS sets up the page tables but doesn't read the whole file into RAM yet.
         let mmap_file = io::mmap::MmapFile::open(&path_buf)?;
+        let line_ending = detect_line_ending(mmap_file.as_slice());
         // 3. Scan the MmapFile slice to build the BTreeLineIndex.
         // We do this BEFORE transferring ownership of the mmap_file to the PieceTable.
         // The slice borrow is immediately dropped when `BTreeLineIndex::new` returns.
@@ -135,6 +188,7 @@ impl TextBuffer {
         let piece_table = crate::piece_table::table::PieceTable::new(mmap_file)?;
 
         self.piece_table = piece_table;
+        self.line_ending = line_ending;
         self.line_index = line_index;
         self.filepath = Some(path_buf);
         self._temp_backing = None;
@@ -190,6 +244,7 @@ impl TextBuffer {
 
         // 4. Drop the old MmapFile and map the newly saved file.
         let new_mmap = io::mmap::MmapFile::open(filepath)?;
+        let line_ending = detect_line_ending(new_mmap.as_slice());
 
         // 5. Reset the PieceTable state.
         // This method on your PieceTable should:
@@ -245,6 +300,11 @@ impl TextBuffer {
             crate::line_index::node::Node::Internal(n) => n.summary.line_count,
             crate::line_index::node::Node::Leaf(n) => n.summary.line_count,
         }
+    }
+
+    #[inline]
+    pub fn get_line_len_at(&self, line_idx: usize) -> Option<u64> {
+        self.line_index.get_line_length_at(line_idx)
     }
 
     /// Returns the total byte size of the document.
