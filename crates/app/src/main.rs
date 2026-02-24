@@ -8,9 +8,11 @@ pub fn main() {
     let backend = std::rc::Rc::new(std::cell::RefCell::new(
         editor_state::document::Document::new(editor_core::text::TextBuffer::new().unwrap()),
     ));
-    let mut text_editor = ui::TextEditor::new_editor(0, 30, 400, 270, backend.clone());
-    let mut menu = fltk::menu::MenuBar::default().with_size(800, 30);
+    let mut text_editor = ui::TextEditor::new(0, 30, 400, 270, backend.clone());
+    let mut menu = fltk::menu::MenuBar::default().with_size(400, 30);
     let menu_backend = backend.clone();
+
+    win.resizable(&text_editor.group);
 
     menu.add(
         "File/Open...",
@@ -20,8 +22,8 @@ pub fn main() {
             if let Some(file_path) =
                 fltk::dialog::file_chooser("Open File", "*.{txt,rs,md,log}", ".", false)
             {
-                println!("Open File: {}", file_path);
                 menu_backend.borrow_mut().open_file(file_path).unwrap();
+                text_editor.on_content_changed();
 
                 fltk::app::redraw();
             }
@@ -29,9 +31,7 @@ pub fn main() {
     );
 
     win.end();
-    win.make_resizable(true);
     win.show();
-    text_editor.show();
 
     app.run().unwrap();
 }
