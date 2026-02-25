@@ -59,7 +59,7 @@ jobs:
         run: |
           sudo apt-get update
           # Uncomment and modify the below line based on your UI/Renderer backend (e.g., winit dependencies)
-          # sudo apt-get install -y libx11-dev libwayland-dev libxkbcommon-dev
+          sudo apt-get install -y libx11-dev libwayland-dev libxkbcommon-dev
 
       - name: Build Workspace
         # Builds app, editor-core, editor-state, io, layout, renderer, ui, util
