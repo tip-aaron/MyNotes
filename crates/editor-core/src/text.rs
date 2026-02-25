@@ -684,7 +684,7 @@ mod text_buffer_creation_save_tests {
         // Use a temporary directory instead of NamedTempFile to avoid Windows file locks
         let target_dir = tempfile::tempdir().unwrap();
         let path = target_dir.path().join("save_success_test.txt");
-        
+
         // std::fs::write opens, writes, and immediately closes the file handle
         std::fs::write(&path, b"Original text").unwrap();
 
