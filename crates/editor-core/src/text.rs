@@ -244,7 +244,6 @@ impl TextBuffer {
 
         // 4. Drop the old MmapFile and map the newly saved file.
         let new_mmap = io::mmap::MmapFile::open(filepath)?;
-        let line_ending = detect_line_ending(new_mmap.as_slice());
 
         // 5. Reset the PieceTable state.
         // This method on your PieceTable should:

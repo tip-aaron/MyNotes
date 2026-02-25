@@ -2,11 +2,9 @@ name: Rust Release Build
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   pull_request:
-    branches:
-      - main
+    branches: [ main ]
 
 jobs:
   build:
@@ -18,36 +16,36 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+
+      - name: Install Linux dependencies (FLTK)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxext-dev libxft-dev libxinerama-dev libxcursor-dev libxrender-dev libxfixes-dev libpango1.0-dev libgl1-mesa-dev libglu1-mesa-dev
 
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: minimal
-          override: true
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Cargo registry
-        uses: actions/cache@v3
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: cargo-registry-
-
-      - name: Cache Cargo build
-        uses: actions/cache@v3
-        with:
-          path: target
-          key: cargo-build-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: cargo-build-${{ runner.os }}-
+          key: ${{ runner.os }}
 
       - name: Build release
         run: cargo build --release
 
-      - name: Upload release binaries
-        uses: actions/upload-artifact@v3
+      # Note: Replace 'your_app_name' with your actual crate name from Cargo.toml
+      - name: Upload release binaries (Unix)
+        if: runner.os != 'Windows'
+        uses: actions/upload-artifact@v4
         with:
           name: release-${{ runner.os }}
-          path: target/release/
+          path: target/release/your_app_name
+
+      - name: Upload release binaries (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ runner.os }}
+          path: target/release/MyNotes.exe
