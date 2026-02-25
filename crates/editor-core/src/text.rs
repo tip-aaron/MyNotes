@@ -681,15 +681,18 @@ mod text_buffer_creation_save_tests {
 
     #[test]
     fn test_textbuffer_save_success() {
-        let mut temp_file = NamedTempFile::new().unwrap();
-        temp_file.write_all(b"Original text").unwrap();
-        let path = temp_file.path().to_path_buf();
+        // Use a temporary directory instead of NamedTempFile to avoid Windows file locks
+        let target_dir = tempfile::tempdir().unwrap();
+        let path = target_dir.path().join("save_success_test.txt");
+        
+        // std::fs::write opens, writes, and immediately closes the file handle
+        std::fs::write(&path, b"Original text").unwrap();
 
         let mut buffer = TextBuffer::open(&path).unwrap();
         buffer.piece_table.insert_last(0, b" plus edits").unwrap();
         buffer.is_dirty = true;
 
-        // Execute Save
+        // Execute Save (This will now succeed on Windows!)
         buffer.save().expect("Save should succeed");
 
         // Assert core save transitions and data integrity
